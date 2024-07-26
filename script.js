@@ -1,11 +1,47 @@
-let currentYear = 2013;
+let currentSlide = 0;
+const slides = [
+    "slide-introduction",
+    "slide-2013",
+    "slide-2018",
+    "slide-2023",
+    "slide-conclusion"
+];
+const yearSlides = {
+    1: 2013,
+    2: 2018,
+    3: 2023
+};
 
-function loadData(year) {
-    currentYear = year;
+function showSlide(index) {
+    slides.forEach((slide, i) => {
+        d3.select(`#${slide}`).classed("active-slide", i === index);
+    });
+    if (index in yearSlides) {
+        loadData(yearSlides[index], `chart-container-${yearSlides[index]}`, `comparison-college-${yearSlides[index]}`, `annotations-${yearSlides[index]}`);
+    }
+}
+
+function previousSlide() {
+    if (currentSlide > 0) {
+        currentSlide--;
+        showSlide(currentSlide);
+    }
+}
+
+function nextSlide() {
+    if (currentSlide < slides.length - 1) {
+        currentSlide++;
+        showSlide(currentSlide);
+    }
+}
+
+function loadData(year, chartContainerId, comparisonDropdownId, annotationsId) {
     d3.csv("CleanedCombinedSummaryUndergrad.csv").then(data => {
         const filteredData = data.filter(d => +d.Term === year);
+
         const colleges = [...new Set(filteredData.map(d => d["College Name"]))];
-        const comparisonDropdown = d3.select("#comparison-college");
+
+        const comparisonDropdown = d3.select(`#${comparisonDropdownId}`);
         if (comparisonDropdown.selectAll("option").empty()) {
             colleges.forEach(college => {
                 if (college !== "Engineering") {
@@ -13,16 +49,17 @@ function loadData(year) {
                 }
             });
         }
+
         const selectedCollege = comparisonDropdown.node().value;
-        updateCharts(filteredData, selectedCollege);
+
+        updateCharts(filteredData, selectedCollege, chartContainerId, annotationsId, year);
     });
 }
 
-function updateCharts(data, comparisonCollege) {
-    d3.select("#chart-container").selectAll("*").remove();
+function updateCharts(data, comparisonCollege, chartContainerId, annotationsId, year) {
+    d3.select(`#${chartContainerId}`).selectAll("*").remove();
 
     const collegesToDisplay = ["Engineering", comparisonCollege];
-    console.log(`Gender Data for ${comparisonCollege}:`, comparisonCollege);
 
     collegesToDisplay.forEach(college => {
         const collegeData = data.filter(d => d["College Name"] === college);
@@ -30,19 +67,20 @@ function updateCharts(data, comparisonCollege) {
         const genderData = prepareGenderData(collegeData);
         const racialData = prepareRacialData(collegeData);
 
-        // ID Format
-        const formattedCollege = college.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
+        const formattedCollege = college.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, ''); // Format college names for IDs
 
-        const collegeSection = d3.select("#chart-container").append("div").attr("class", "college-section");
+        const collegeSection = d3.select(`#${chartContainerId}`).append("div").attr("class", "college-section");
+
         collegeSection.append("h2").text(college);
-        collegeSection.append("div").attr("id", `gender-chart-${formattedCollege}`).attr("class", "chart");
-        collegeSection.append("div").attr("id", `racial-chart-${formattedCollege}`).attr("class", "chart");
 
-        updateChart(`#gender-chart-${formattedCollege}`, genderData, `Gender Breakdown - ${college}`);
-        updateChart(`#racial-chart-${formattedCollege}`, racialData, `Racial Breakdown - ${college}`);
+        collegeSection.append("div").attr("id", `gender-chart-${formattedCollege}-${year}`).attr("class", "chart");
+        collegeSection.append("div").attr("id", `racial-chart-${formattedCollege}-${year}`).attr("class", "chart");
+        console.log(`gender-chart-${formattedCollege}`)
+        updateChart(`#gender-chart-${formattedCollege}-${year}`, genderData, `Gender Breakdown - ${college}`);
+        updateChart(`#racial-chart-${formattedCollege}-${year}`, racialData, `Racial Breakdown - ${college}`);
     });
 
-    updateAnnotations(currentYear);
+    updateAnnotations(year, annotationsId);
 }
 
 function prepareGenderData(data) {
@@ -73,7 +111,7 @@ function updateChart(containerId, data, title) {
     const width = 400;
     const height = 400;
     const radius = Math.min(width, height) / 3;
-    const color = d3.scaleOrdinal(d3.schemeCategory10);
+    const color = d3.scaleOrdinal(d3.schemePastel1);
 
     d3.select(containerId).selectAll("*").remove();
 
@@ -121,26 +159,33 @@ function updateChart(containerId, data, title) {
             d3.select("#tooltip").style("visibility", "hidden");
         });
 
-    // Labels
-    svg.selectAll("text.label")
-        .data(pie(data))
-        .enter().append("text")
-        .attr("class", "label")
-        .attr("transform", d => `translate(${arc.centroid(d)})`)
-        .attr("dy", "0.35em")
-        .style("text-anchor", "middle")
-        .style("fill", "#000")
-        .style("font-size", "12px")
-        .text(d => d.data.label);
+    svg.append("g")
+    .attr("text-anchor", "middle")
+    .selectAll()
+    .data(pie(data))
+    .join("text")
+      .attr("transform", d => `translate(${arc.centroid(d)})`)
+      .call(text => text.append("tspan")
+          .attr("y", "-0.4em")
+          .attr("font-weight", "bold")
+          .text(d => d.data.name))
+      .call(text => text.filter(d => (d.endAngle - d.startAngle) > 0.25).append("tspan")
+          .attr("x", 0)
+          .attr("y", "0.7em")
+          .attr("fill-opacity", 0.7)
+          .text(d => d.data.label));
+
+    console.log("SVG dimensions:", path.attr("width"), path.attr("height"));
+
 }
 
-function updateAnnotations(year) {
+function updateAnnotations(year, annotationsId) {
     const annotations = {
         2013: "Annotations for 2013...",
         2018: "Annotations for 2018...",
         2023: "Annotations for 2023..."
     };
-    d3.select("#annotations").text(annotations[year]);
+    d3.select(`#${annotationsId}`).text(annotations[year]);
 }
 
-loadData(2013);
+showSlide(currentSlide);
